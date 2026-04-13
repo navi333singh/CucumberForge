@@ -1,0 +1,144 @@
+<idea-plugin>
+    <id>com.cucumberforge.plugin</id>
+    <name>CucumberForge</name>
+    <vendor url="https://github.com/cucumberforge">CucumberForge</vendor>
+
+    <description><![CDATA[
+        BDD Testing Accelerator for Spring Boot with Cucumber.
+        Generate boilerplate, step definitions, AI-powered tests, and more.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.java</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Settings -->
+        <projectConfigurable
+                parentId="tools"
+                id="com.cucumberforge.settings"
+                displayName="CucumberForge"
+                instance="com.cucumberforge.plugin.ui.AiSettingsConfigurable"/>
+
+        <!-- Services -->
+        <projectService
+                serviceImplementation="com.cucumberforge.plugin.services.SettingsService"/>
+        <projectService
+                serviceImplementation="com.cucumberforge.plugin.services.BoilerplateService"/>
+        <projectService
+                serviceImplementation="com.cucumberforge.plugin.services.StepDefinitionService"/>
+        <projectService
+                serviceImplementation="com.cucumberforge.plugin.services.StepRegistryService"/>
+        <projectService
+                serviceImplementation="com.cucumberforge.plugin.services.ProjectAnalyzerService"/>
+        <projectService
+                serviceImplementation="com.cucumberforge.plugin.services.AiService"/>
+
+        <!-- Tool Window -->
+        <toolWindow id="CucumberForge"
+                    anchor="bottom"
+                    factoryClass="com.cucumberforge.plugin.toolwindow.BddDashboardFactory"
+                    icon="/icons/cucumberForge.svg"/>
+
+        <!-- Completion -->
+        <completion.contributor
+                language="any"
+                implementationClass="com.cucumberforge.plugin.editor.StepCompletionContributor"
+                order="first"/>
+
+        <!-- Annotator -->
+        <annotator
+                language="any"
+                implementationClass="com.cucumberforge.plugin.editor.GherkinAnnotator"/>
+
+        <!-- Notification Group -->
+        <notificationGroup id="CucumberForge"
+                           displayType="BALLOON"
+                           isLogByDefault="true"/>
+    </extensions>
+
+    <actions>
+        <!-- Main Menu Group -->
+        <group id="CucumberForge.MainMenu"
+               text="CucumberForge"
+               description="CucumberForge BDD tools"
+               popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+
+            <action id="CucumberForge.GenerateBoilerplate"
+                    class="com.cucumberforge.plugin.actions.GenerateBoilerplateAction"
+                    text="Generate Cucumber Boilerplate..."
+                    description="Generate complete Cucumber BDD project structure"/>
+
+            <action id="CucumberForge.GenerateStepDefs"
+                    class="com.cucumberforge.plugin.actions.GenerateStepDefsAction"
+                    text="Generate Step Definitions"
+                    description="Generate step definitions from current .feature file"/>
+
+            <action id="CucumberForge.AiGenerateTest"
+                    class="com.cucumberforge.plugin.actions.AiGenerateTestAction"
+                    text="AI: Generate Cucumber Tests..."
+                    description="Use AI to generate Cucumber tests from source code"/>
+
+            <action id="CucumberForge.GenerateTestDataBuilder"
+                    class="com.cucumberforge.plugin.actions.GenerateTestDataBuilderAction"
+                    text="Generate Test Data Builder"
+                    description="Generate a test data builder class for the selected entity"/>
+
+            <action id="CucumberForge.InsertScenarioTemplate"
+                    class="com.cucumberforge.plugin.actions.InsertScenarioTemplateAction"
+                    text="Insert Scenario Template..."
+                    description="Insert a predefined scenario template"/>
+
+            <action id="CucumberForge.GenerateTestcontainers"
+                    class="com.cucumberforge.plugin.actions.GenerateTestcontainersAction"
+                    text="Generate Testcontainers Config"
+                    description="Generate Testcontainers configuration from project dependencies"/>
+
+            <separator/>
+
+            <action id="CucumberForge.OpenDashboard"
+                    class="com.cucumberforge.plugin.actions.OpenDashboardAction"
+                    text="Open BDD Dashboard"
+                    description="Open the CucumberForge BDD Dashboard"/>
+        </group>
+
+        <!-- Context Menu for .feature files -->
+        <group id="CucumberForge.FeatureFileMenu"
+               text="CucumberForge"
+               popup="true">
+            <add-to-group group-id="EditorPopupMenu" anchor="before" relative-to-action="EditorPopupMenu1"/>
+
+            <action id="CucumberForge.ContextGenerateStepDefs"
+                    class="com.cucumberforge.plugin.actions.GenerateStepDefsAction"
+                    text="Generate Step Definitions"
+                    description="Generate step definitions from this feature file"/>
+
+            <action id="CucumberForge.ContextInsertTemplate"
+                    class="com.cucumberforge.plugin.actions.InsertScenarioTemplateAction"
+                    text="Insert Scenario Template..."
+                    description="Insert a predefined scenario template"/>
+
+            <action id="CucumberForge.ContextAiGenerate"
+                    class="com.cucumberforge.plugin.actions.AiGenerateTestAction"
+                    text="AI: Generate Test..."
+                    description="Use AI to generate Cucumber tests"/>
+        </group>
+
+        <!-- Context Menu for Java files -->
+        <group id="CucumberForge.JavaFileMenu"
+               text="CucumberForge"
+               popup="true">
+            <add-to-group group-id="GenerateGroup" anchor="last"/>
+
+            <action id="CucumberForge.ContextGenerateBuilder"
+                    class="com.cucumberforge.plugin.actions.GenerateTestDataBuilderAction"
+                    text="Test Data Builder"
+                    description="Generate test data builder for this class"/>
+
+            <action id="CucumberForge.ContextAiGenerateFromJava"
+                    class="com.cucumberforge.plugin.actions.AiGenerateTestAction"
+                    text="AI: Generate Cucumber Tests..."
+                    description="Generate Cucumber tests for this class using AI"/>
+        </group>
+    </actions>
+</idea-plugin>
