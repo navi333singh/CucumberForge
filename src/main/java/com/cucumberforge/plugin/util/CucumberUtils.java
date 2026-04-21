@@ -29,9 +29,9 @@ public final class CucumberUtils {
      */
     public static List<VirtualFile> findFeatureFiles(Project project) {
         List<VirtualFile> featureFiles = new ArrayList<>();
-        FileType featureType = FileTypeManager.getInstance().getFileTypeByExtension("feature");
-        Collection<VirtualFile> files = FileTypeIndex.getFiles(
-                featureType, GlobalSearchScope.projectScope(project));
+        Collection<VirtualFile> files = com.intellij.psi.search.FilenameIndex.getAllFilesByExt(
+                project, "feature", GlobalSearchScope.projectScope(project)
+        );
         featureFiles.addAll(files);
         return featureFiles;
     }
