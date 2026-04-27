@@ -2,6 +2,7 @@ package com.cucumberforge.plugin.model;
 
 /**
  * Configuration for Cucumber project setup.
+ * Extended with HTTP client, extra libraries, and code style options.
  */
 public class ProjectConfig {
 
@@ -16,9 +17,23 @@ public class ProjectConfig {
     private String configPackage = "config";
     private String supportPackage = "support";
 
+    // New: HTTP Client selection
+    private HttpClientType httpClientType = HttpClientType.WEB_TEST_CLIENT;
+    private boolean includeMockMvc = false;
+
+    // New: Additional test libraries
+    private boolean includeSpringSecurityTest = false;
+    private boolean includeWireMock = false;
+    private boolean includeAwaitility = false;
+
+    // New: Code style
+    private boolean includeLombok = false;
+    private boolean includeAssertJ = true;
+
     public ProjectConfig() {}
 
-    // Getters and setters
+    // --- Getters and setters ---
+
     public String getBasePackage() { return basePackage; }
     public void setBasePackage(String basePackage) { this.basePackage = basePackage; }
 
@@ -49,6 +64,27 @@ public class ProjectConfig {
     public String getSupportPackage() { return supportPackage; }
     public void setSupportPackage(String supportPackage) { this.supportPackage = supportPackage; }
 
+    public HttpClientType getHttpClientType() { return httpClientType; }
+    public void setHttpClientType(HttpClientType httpClientType) { this.httpClientType = httpClientType; }
+
+    public boolean isIncludeMockMvc() { return includeMockMvc; }
+    public void setIncludeMockMvc(boolean includeMockMvc) { this.includeMockMvc = includeMockMvc; }
+
+    public boolean isIncludeSpringSecurityTest() { return includeSpringSecurityTest; }
+    public void setIncludeSpringSecurityTest(boolean v) { this.includeSpringSecurityTest = v; }
+
+    public boolean isIncludeWireMock() { return includeWireMock; }
+    public void setIncludeWireMock(boolean includeWireMock) { this.includeWireMock = includeWireMock; }
+
+    public boolean isIncludeAwaitility() { return includeAwaitility; }
+    public void setIncludeAwaitility(boolean includeAwaitility) { this.includeAwaitility = includeAwaitility; }
+
+    public boolean isIncludeLombok() { return includeLombok; }
+    public void setIncludeLombok(boolean includeLombok) { this.includeLombok = includeLombok; }
+
+    public boolean isIncludeAssertJ() { return includeAssertJ; }
+    public void setIncludeAssertJ(boolean includeAssertJ) { this.includeAssertJ = includeAssertJ; }
+
     // --- Enums ---
 
     public enum JUnitVersion {
@@ -78,6 +114,18 @@ public class ProjectConfig {
 
         public String getDisplay() { return display; }
         public String getContainerImage() { return containerImage; }
+        @Override public String toString() { return display; }
+    }
+
+    public enum HttpClientType {
+        WEB_TEST_CLIENT("WebTestClient"),
+        MOCK_MVC("MockMvc"),
+        REST_ASSURED("REST-Assured"),
+        NONE("None");
+
+        private final String display;
+        HttpClientType(String display) { this.display = display; }
+        public String getDisplay() { return display; }
         @Override public String toString() { return display; }
     }
 

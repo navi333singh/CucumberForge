@@ -1,7 +1,6 @@
 package com.cucumberforge.plugin.services;
 
 import com.google.gson.*;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.project.Project;
 import okhttp3.*;
@@ -16,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * Service for AI-assisted test generation.
  * Supports OpenAI API and GitHub Copilot.
+ * Includes intelligent prompt engineering that analyzes existing test patterns.
  */
 @Service(Service.Level.PROJECT)
 public final class AiService {
@@ -40,11 +40,6 @@ public final class AiService {
 
     /**
      * Generate Cucumber feature + step definitions for a given class context.
-     *
-     * @param classContext     The analyzed class information
-     * @param existingFeatures Existing feature files as reference
-     * @param existingSteps    Existing step definitions as reference
-     * @return CompletableFuture containing the generated test code
      */
     public CompletableFuture<GenerationResult> generateTests(String classContext,
                                                               String existingFeatures,
@@ -61,11 +56,6 @@ public final class AiService {
 
     /**
      * Generate AI completion for a partial Gherkin step.
-     *
-     * @param partialStep     The partially written step text
-     * @param scenarioContext The current scenario context
-     * @param existingSteps   Existing steps for reference
-     * @return CompletableFuture containing suggested completions
      */
     public CompletableFuture<List<String>> suggestStepCompletions(String partialStep,
                                                                    String scenarioContext,
@@ -176,15 +166,12 @@ public final class AiService {
     private CompletableFuture<GenerationResult> generateWithCopilot(String prompt) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                // GitHub Copilot chat API via the IDE's built-in Copilot plugin
-                // We use the GitHub Copilot API endpoint with the IDE's cached auth token
                 String token = getCopilotToken();
                 if (token == null || token.isEmpty()) {
                     return new GenerationResult(null,
                             "GitHub Copilot not authenticated. Please sign in to GitHub Copilot in your IDE first.");
                 }
 
-                // Use the Copilot Chat completions endpoint
                 JsonObject messageSystem = new JsonObject();
                 messageSystem.addProperty("role", "system");
                 messageSystem.addProperty("content", SYSTEM_PROMPT);
@@ -233,12 +220,8 @@ public final class AiService {
         });
     }
 
-    /**
-     * Attempt to retrieve the GitHub Copilot OAuth token from the IDE's config.
-     */
     private String getCopilotToken() {
         try {
-            // Try reading from the standard Copilot token file locations
             String userHome = System.getProperty("user.home");
             java.nio.file.Path[] tokenPaths = {
                     java.nio.file.Paths.get(userHome, ".config", "github-copilot", "hosts.json"),
@@ -251,7 +234,6 @@ public final class AiService {
                 if (java.nio.file.Files.exists(path)) {
                     String content = java.nio.file.Files.readString(path);
                     JsonObject json = JsonParser.parseString(content).getAsJsonObject();
-                    // Extract oauth_token from the first entry
                     for (String key : json.keySet()) {
                         JsonObject entry = json.getAsJsonObject(key);
                         if (entry != null && entry.has("oauth_token")) {
@@ -261,7 +243,6 @@ public final class AiService {
                 }
             }
         } catch (Exception ignored) {
-            // Token not available
         }
         return null;
     }
@@ -270,8 +251,8 @@ public final class AiService {
 
     private static final String SYSTEM_PROMPT =
             "You are an expert BDD test engineer specializing in Cucumber with Java Spring Boot. " +
-            "You write clean, maintainable, and comprehensive Gherkin scenarios and Java step definitions. " +
-            "Follow these rules:\n" +
+            "You write clean, maintainable, and comprehensive Gherkin scenarios and Java step definitions.\n\n" +
+            "CRITICAL RULES:\n" +
             "1. Use Cucumber expressions (not regex) for step patterns\n" +
             "2. Use Given-When-Then structure strictly\n" +
             "3. Keep scenarios focused on one behavior\n" +
@@ -280,36 +261,180 @@ public final class AiService {
             "6. Use meaningful step descriptions that are reusable\n" +
             "7. Generate Java step definitions with proper Spring annotations\n" +
             "8. Include TODO comments where implementation details are needed\n" +
-            "9. Match the style and conventions of existing tests when provided\n" +
-            "10. ALWAYS respond with code blocks: one ```gherkin block for the .feature file " +
-            "and one ```java block for step definitions.";
+            "9. ALWAYS respond with code blocks: one ```gherkin block for the .feature file " +
+            "and one ```java block for step definitions.\n\n" +
+            "CONSISTENCY RULES (VERY IMPORTANT):\n" +
+            "10. When existing test code is provided, you MUST follow the EXACT same patterns:\n" +
+            "    - If existing tests use WebTestClient, your new tests MUST also use WebTestClient\n" +
+            "    - If existing tests use MockMvc, your new tests MUST also use MockMvc\n" +
+            "    - If existing tests use RestAssured, your new tests MUST also use RestAssured\n" +
+            "    - Match the same assertion library (AssertJ, Hamcrest, JUnit assertions)\n" +
+            "    - Match the same import style and class organization\n" +
+            "    - Reuse the same helper methods and base classes that existing tests use\n" +
+            "    - Follow the same variable naming conventions\n" +
+            "    - Use the same @Autowired / @MockBean patterns\n" +
+            "    - If existing tests extend a base class, the new test MUST extend the same base class\n" +
+            "11. Match the EXACT coding style: indentation, bracket placement, comment style\n" +
+            "12. If existing step definition classes inject services with @Autowired, do the same\n" +
+            "13. If existing tests use a shared state/context object, reuse it\n" +
+            "14. Reuse existing step definitions where applicable — do NOT create duplicates";
 
     private String buildGenerationPrompt(String classContext, String existingFeatures, String existingSteps) {
         StringBuilder sb = new StringBuilder();
         sb.append("Generate comprehensive Cucumber BDD tests for the following class.\n\n");
+        sb.append("=== Target Class ===\n");
         sb.append(classContext).append("\n\n");
 
-        if (existingFeatures != null && !existingFeatures.isEmpty()) {
-            sb.append("=== Existing Feature Files (match this style) ===\n");
-            sb.append(existingFeatures).append("\n\n");
+        // Analyze existing test patterns
+        if (existingSteps != null && !existingSteps.isEmpty()) {
+            sb.append("=== EXISTING STEP DEFINITIONS — YOU MUST FOLLOW THIS EXACT PATTERN ===\n\n");
+
+            // Detect HTTP client in use
+            String httpClientDetected = detectHttpClient(existingSteps);
+            if (httpClientDetected != null) {
+                sb.append("*** DETECTED HTTP CLIENT: ").append(httpClientDetected).append(" ***\n");
+                sb.append("You MUST use ").append(httpClientDetected).append(" in your generated code.\n");
+                sb.append("Do NOT use any other HTTP client library.\n\n");
+            }
+
+            // Detect assertion library
+            String assertionLib = detectAssertionLibrary(existingSteps);
+            if (assertionLib != null) {
+                sb.append("*** DETECTED ASSERTION LIBRARY: ").append(assertionLib).append(" ***\n");
+                sb.append("You MUST use ").append(assertionLib).append(" for all assertions.\n\n");
+            }
+
+            // Detect base class
+            String baseClass = detectBaseClass(existingSteps);
+            if (baseClass != null) {
+                sb.append("*** DETECTED BASE CLASS: ").append(baseClass).append(" ***\n");
+                sb.append("Your new step definitions class MUST extend ").append(baseClass).append(".\n\n");
+            }
+
+            // Detect dependency injection pattern
+            String diPattern = detectDiPattern(existingSteps);
+            if (diPattern != null) {
+                sb.append("*** DI PATTERN: ").append(diPattern).append(" ***\n\n");
+            }
+
+            // Detect shared state / context objects
+            String sharedState = detectSharedState(existingSteps);
+            if (sharedState != null) {
+                sb.append("*** SHARED STATE OBJECTS: ").append(sharedState).append(" ***\n");
+                sb.append("Reuse these shared context objects in your step definitions.\n\n");
+            }
+
+            sb.append("Existing step definitions (follow this style exactly):\n");
+            sb.append(existingSteps).append("\n\n");
         }
 
-        if (existingSteps != null && !existingSteps.isEmpty()) {
-            sb.append("=== Existing Step Definitions (reuse these where possible) ===\n");
-            sb.append(existingSteps).append("\n\n");
+        if (existingFeatures != null && !existingFeatures.isEmpty()) {
+            sb.append("=== EXISTING FEATURE FILES (match this Gherkin style) ===\n");
+            sb.append(existingFeatures).append("\n\n");
         }
 
         SettingsService settings = SettingsService.getInstance(project);
         if (!settings.getState().customPromptPrefix.isEmpty()) {
-            sb.append("Additional instructions: ").append(settings.getState().customPromptPrefix).append("\n\n");
+            sb.append("=== ADDITIONAL USER INSTRUCTIONS ===\n");
+            sb.append(settings.getState().customPromptPrefix).append("\n\n");
         }
 
+        sb.append("=== YOUR TASK ===\n");
         sb.append("Generate:\n");
-        sb.append("1. A complete .feature file with multiple scenarios (happy path + error cases)\n");
-        sb.append("2. The corresponding Java step definitions class\n");
-        sb.append("Reuse existing step definitions where applicable.\n");
+        sb.append("1. A complete .feature file with multiple scenarios (happy path + error cases + edge cases)\n");
+        sb.append("2. The corresponding Java step definitions class that follows the EXACT same patterns ");
+        sb.append("as the existing test code shown above\n");
+        sb.append("3. Reuse existing step definitions where applicable — do NOT create duplicate steps\n");
+        sb.append("4. The generated step definitions must be immediately compilable and consistent ");
+        sb.append("with the rest of the test suite\n");
 
         return sb.toString();
+    }
+
+    /**
+     * Detect which HTTP client the existing tests use.
+     */
+    private String detectHttpClient(String code) {
+        if (code.contains("WebTestClient") || code.contains("webTestClient")) {
+            return "WebTestClient";
+        }
+        if (code.contains("MockMvc") || code.contains("mockMvc")) {
+            return "MockMvc";
+        }
+        if (code.contains("RestAssured") || code.contains("given().") || code.contains("io.restassured")) {
+            return "RestAssured";
+        }
+        if (code.contains("TestRestTemplate") || code.contains("testRestTemplate")) {
+            return "TestRestTemplate";
+        }
+        return null;
+    }
+
+    /**
+     * Detect which assertion library the existing tests use.
+     */
+    private String detectAssertionLibrary(String code) {
+        if (code.contains("assertThat(") && code.contains("org.assertj")) {
+            return "AssertJ (org.assertj.core.api.Assertions.assertThat)";
+        }
+        if (code.contains("assertThat(") && code.contains("org.hamcrest")) {
+            return "Hamcrest (org.hamcrest.MatcherAssert.assertThat)";
+        }
+        if (code.contains("assertEquals(") || code.contains("assertTrue(")) {
+            return "JUnit Assertions (org.junit.jupiter.api.Assertions)";
+        }
+        if (code.contains("assertThat(")) {
+            return "AssertJ (auto-detected from assertThat usage)";
+        }
+        return null;
+    }
+
+    /**
+     * Detect if step definition classes extend a base class.
+     */
+    private String detectBaseClass(String code) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("class\\s+\\w+\\s+extends\\s+(\\w+)")
+                .matcher(code);
+        if (m.find()) {
+            String base = m.group(1);
+            if (!base.equals("Object")) return base;
+        }
+        return null;
+    }
+
+    /**
+     * Detect dependency injection patterns.
+     */
+    private String detectDiPattern(String code) {
+        List<String> patterns = new ArrayList<>();
+        if (code.contains("@Autowired")) patterns.add("Spring @Autowired injection");
+        if (code.contains("@MockBean")) patterns.add("@MockBean for mocking");
+        if (code.contains("@SpyBean")) patterns.add("@SpyBean for partial mocks");
+        if (code.contains("constructor")) patterns.add("Constructor injection via PicoContainer");
+        return patterns.isEmpty() ? null : String.join(", ", patterns);
+    }
+
+    /**
+     * Detect shared state/context objects (common in Cucumber).
+     */
+    private String detectSharedState(String code) {
+        List<String> stateObjects = new ArrayList<>();
+        // Look for common shared state patterns
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(private|protected)\\s+(\\w*(?:Context|State|World|SharedData|TestContext)\\w*)\\s+(\\w+)")
+                .matcher(code);
+        while (m.find()) {
+            stateObjects.add(m.group(2) + " " + m.group(3));
+        }
+        // Also look for Response/Result fields that are shared across steps
+        m = java.util.regex.Pattern
+                .compile("(private|protected)\\s+(Response(?:Spec)?|MvcResult|ResponseEntity)\\s+(\\w+)")
+                .matcher(code);
+        while (m.find()) {
+            stateObjects.add(m.group(2) + " " + m.group(3));
+        }
+        return stateObjects.isEmpty() ? null : String.join(", ", stateObjects);
     }
 
     private String buildCompletionPrompt(String partialStep, String scenarioContext, String existingSteps) {
@@ -343,17 +468,11 @@ public final class AiService {
         public String getError() { return error; }
         public boolean isSuccess() { return error == null && content != null; }
 
-        /**
-         * Extract the feature file content from the AI response.
-         */
         public String extractFeatureContent() {
             if (content == null) return "";
             return extractCodeBlock(content, "gherkin", "feature");
         }
 
-        /**
-         * Extract the Java step definitions from the AI response.
-         */
         public String extractJavaContent() {
             if (content == null) return "";
             return extractCodeBlock(content, "java");
@@ -365,7 +484,6 @@ public final class AiService {
                 int start = text.indexOf(marker);
                 if (start >= 0) {
                     start += marker.length();
-                    // Skip to next line
                     int lineEnd = text.indexOf('\n', start);
                     if (lineEnd >= 0) start = lineEnd + 1;
 
@@ -375,7 +493,7 @@ public final class AiService {
                     }
                 }
             }
-            return text; // Return full content if no code block found
+            return text;
         }
     }
 }

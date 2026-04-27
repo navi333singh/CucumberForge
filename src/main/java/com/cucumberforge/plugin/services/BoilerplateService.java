@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * Service that generates the full Cucumber BDD project boilerplate.
+ * Supports extended options: HTTP clients, WireMock, Spring Security, etc.
  */
 @Service(Service.Level.PROJECT)
 public final class BoilerplateService {
@@ -70,16 +71,36 @@ public final class BoilerplateService {
                     createFile(configDir, "TestcontainersConfiguration.java", tcConfig);
                 }
 
-                // 5. Generate sample feature file
-                String sampleFeature = generateSampleFeature();
+                // 5. Generate HTTP Client base class
+                if (config.getHttpClientType() == ProjectConfig.HttpClientType.WEB_TEST_CLIENT) {
+                    createFile(supportDir, "BaseWebTestClient.java",
+                            generateWebTestClientBase(config.getBasePackage()));
+                } else if (config.getHttpClientType() == ProjectConfig.HttpClientType.MOCK_MVC
+                        || config.isIncludeMockMvc()) {
+                    createFile(supportDir, "BaseMockMvcTest.java",
+                            generateMockMvcBase(config.getBasePackage()));
+                }
+
+                // 6. Generate WireMock config if requested
+                if (config.isIncludeWireMock()) {
+                    createFile(configDir, "WireMockConfiguration.java",
+                            generateWireMockConfig(config.getBasePackage()));
+                }
+
+                // 7. Generate sample feature file
+                String sampleFeature = generateSampleFeature(config);
                 createFile(featuresDir, "sample.feature", sampleFeature);
 
-                // 6. Generate application-test.yml
+                // 8. Generate sample step definitions
+                String sampleSteps = generateSampleSteps(config);
+                createFile(stepsDir, "SampleStepDefinitions.java", sampleSteps);
+
+                // 9. Generate application-test.yml
                 VirtualFile resources = createDirectories(baseDir, "src/test/resources");
                 String testYml = generateTestApplicationYml(config);
                 createFile(resources, "application-test.yml", testYml);
 
-                // 7. Add dependencies to build file
+                // 10. Add dependencies to build file
                 addDependenciesToBuild(baseDir, config);
 
             } catch (IOException e) {
@@ -88,17 +109,285 @@ public final class BoilerplateService {
         });
     }
 
-    private String generateSampleFeature() {
-        return "Feature: Sample Feature\n" +
-                "  As a user\n" +
-                "  I want to verify the application works\n" +
-                "  So that I can be confident in my deployment\n\n" +
-                "  @smoke\n" +
-                "  Scenario: Health check endpoint returns OK\n" +
-                "    Given the application is running\n" +
-                "    When I call the health check endpoint\n" +
-                "    Then the response status should be 200\n" +
-                "    And the response body should contain \"UP\"\n";
+    // =================== Template generators ===================
+
+    private String generateSampleFeature(ProjectConfig config) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Feature: Sample Feature\n");
+        sb.append("  As a user\n");
+        sb.append("  I want to verify the application works\n");
+        sb.append("  So that I can be confident in my deployment\n\n");
+        sb.append("  @smoke\n");
+        sb.append("  Scenario: Health check endpoint returns OK\n");
+        sb.append("    Given the application is running\n");
+        sb.append("    When I call the health check endpoint\n");
+        sb.append("    Then the response status should be 200\n");
+        sb.append("    And the response body should contain \"UP\"\n\n");
+        sb.append("  @smoke\n");
+        sb.append("  Scenario Outline: API returns correct status codes\n");
+        sb.append("    Given the application is running\n");
+        sb.append("    When I send a <method> request to \"<endpoint>\"\n");
+        sb.append("    Then the response status should be <status>\n\n");
+        sb.append("    Examples:\n");
+        sb.append("      | method | endpoint         | status |\n");
+        sb.append("      | GET    | /actuator/health | 200    |\n");
+        sb.append("      | GET    | /api/nonexistent | 404    |\n");
+        return sb.toString();
+    }
+
+    private String generateSampleSteps(ProjectConfig config) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("package ").append(config.getBasePackage()).append(".steps;\n\n");
+
+        // Imports based on HTTP client type
+        switch (config.getHttpClientType()) {
+            case WEB_TEST_CLIENT:
+                sb.append("import org.springframework.beans.factory.annotation.Autowired;\n");
+                sb.append("import org.springframework.test.web.reactive.server.WebTestClient;\n");
+                sb.append("import org.springframework.test.web.reactive.server.WebTestClient.ResponseSpec;\n");
+                break;
+            case MOCK_MVC:
+                sb.append("import org.springframework.beans.factory.annotation.Autowired;\n");
+                sb.append("import org.springframework.test.web.servlet.MockMvc;\n");
+                sb.append("import org.springframework.test.web.servlet.MvcResult;\n");
+                sb.append("import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;\n");
+                sb.append("import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;\n");
+                break;
+            case REST_ASSURED:
+                sb.append("import io.restassured.RestAssured;\n");
+                sb.append("import io.restassured.response.Response;\n");
+                sb.append("import org.springframework.boot.test.web.server.LocalServerPort;\n");
+                break;
+            default:
+                sb.append("import org.springframework.beans.factory.annotation.Autowired;\n");
+                break;
+        }
+
+        sb.append("import io.cucumber.java.en.Given;\n");
+        sb.append("import io.cucumber.java.en.When;\n");
+        sb.append("import io.cucumber.java.en.Then;\n");
+        sb.append("import io.cucumber.java.en.And;\n");
+        if (config.isIncludeAssertJ()) {
+            sb.append("import static org.assertj.core.api.Assertions.assertThat;\n");
+        }
+        sb.append("\n");
+        sb.append("/**\n");
+        sb.append(" * Sample step definitions generated by CucumberForge.\n");
+        sb.append(" */\n");
+        sb.append("public class SampleStepDefinitions {\n\n");
+
+        // Field declarations based on HTTP client
+        switch (config.getHttpClientType()) {
+            case WEB_TEST_CLIENT:
+                sb.append("    @Autowired\n");
+                sb.append("    private WebTestClient webTestClient;\n\n");
+                sb.append("    private ResponseSpec lastResponse;\n\n");
+                break;
+            case MOCK_MVC:
+                sb.append("    @Autowired\n");
+                sb.append("    private MockMvc mockMvc;\n\n");
+                sb.append("    private MvcResult lastResult;\n\n");
+                break;
+            case REST_ASSURED:
+                sb.append("    @LocalServerPort\n");
+                sb.append("    private int port;\n\n");
+                sb.append("    private Response lastResponse;\n\n");
+                break;
+        }
+
+        // Step implementations
+        sb.append("    @Given(\"the application is running\")\n");
+        sb.append("    public void theApplicationIsRunning() {\n");
+        sb.append("        // Application started by Spring Boot test context\n");
+        sb.append("    }\n\n");
+
+        sb.append("    @When(\"I call the health check endpoint\")\n");
+        sb.append("    public void iCallTheHealthCheckEndpoint() {\n");
+        switch (config.getHttpClientType()) {
+            case WEB_TEST_CLIENT:
+                sb.append("        lastResponse = webTestClient.get()\n");
+                sb.append("                .uri(\"/actuator/health\")\n");
+                sb.append("                .exchange();\n");
+                break;
+            case MOCK_MVC:
+                sb.append("        try {\n");
+                sb.append("            lastResult = mockMvc.perform(get(\"/actuator/health\"))\n");
+                sb.append("                    .andReturn();\n");
+                sb.append("        } catch (Exception e) {\n");
+                sb.append("            throw new RuntimeException(e);\n");
+                sb.append("        }\n");
+                break;
+            case REST_ASSURED:
+                sb.append("        lastResponse = RestAssured.given()\n");
+                sb.append("                .port(port)\n");
+                sb.append("                .get(\"/actuator/health\");\n");
+                break;
+            default:
+                sb.append("        // TODO: implement HTTP call\n");
+                break;
+        }
+        sb.append("    }\n\n");
+
+        sb.append("    @When(\"I send a {word} request to {string}\")\n");
+        sb.append("    public void iSendARequest(String method, String endpoint) {\n");
+        switch (config.getHttpClientType()) {
+            case WEB_TEST_CLIENT:
+                sb.append("        lastResponse = webTestClient.method(org.springframework.http.HttpMethod.valueOf(method))\n");
+                sb.append("                .uri(endpoint)\n");
+                sb.append("                .exchange();\n");
+                break;
+            case REST_ASSURED:
+                sb.append("        lastResponse = RestAssured.given()\n");
+                sb.append("                .port(port)\n");
+                sb.append("                .request(method, endpoint);\n");
+                break;
+            default:
+                sb.append("        // TODO: implement dynamic HTTP method call\n");
+                break;
+        }
+        sb.append("    }\n\n");
+
+        sb.append("    @Then(\"the response status should be {int}\")\n");
+        sb.append("    public void theResponseStatusShouldBe(int expectedStatus) {\n");
+        switch (config.getHttpClientType()) {
+            case WEB_TEST_CLIENT:
+                sb.append("        lastResponse.expectStatus().isEqualTo(expectedStatus);\n");
+                break;
+            case MOCK_MVC:
+                if (config.isIncludeAssertJ()) {
+                    sb.append("        assertThat(lastResult.getResponse().getStatus()).isEqualTo(expectedStatus);\n");
+                } else {
+                    sb.append("        assert lastResult.getResponse().getStatus() == expectedStatus;\n");
+                }
+                break;
+            case REST_ASSURED:
+                sb.append("        lastResponse.then().statusCode(expectedStatus);\n");
+                break;
+            default:
+                sb.append("        // TODO: verify status code\n");
+                break;
+        }
+        sb.append("    }\n\n");
+
+        sb.append("    @And(\"the response body should contain {string}\")\n");
+        sb.append("    public void theResponseBodyShouldContain(String expectedText) {\n");
+        switch (config.getHttpClientType()) {
+            case WEB_TEST_CLIENT:
+                sb.append("        lastResponse.expectBody(String.class)\n");
+                sb.append("                .consumeWith(body -> assertThat(body.getResponseBody()).contains(expectedText));\n");
+                break;
+            case REST_ASSURED:
+                sb.append("        lastResponse.then().body(org.hamcrest.Matchers.containsString(expectedText));\n");
+                break;
+            default:
+                sb.append("        // TODO: verify body content\n");
+                break;
+        }
+        sb.append("    }\n");
+        sb.append("}\n");
+        return sb.toString();
+    }
+
+    private String generateWebTestClientBase(String packageName) {
+        return "package " + packageName + ".support;\n\n" +
+                "import org.springframework.beans.factory.annotation.Autowired;\n" +
+                "import org.springframework.test.web.reactive.server.WebTestClient;\n\n" +
+                "/**\n" +
+                " * Base class providing WebTestClient for step definitions.\n" +
+                " * Generated by CucumberForge.\n" +
+                " */\n" +
+                "public abstract class BaseWebTestClient {\n\n" +
+                "    @Autowired\n" +
+                "    protected WebTestClient webTestClient;\n\n" +
+                "    protected WebTestClient.ResponseSpec lastResponse;\n\n" +
+                "    protected void doGet(String uri) {\n" +
+                "        lastResponse = webTestClient.get().uri(uri).exchange();\n" +
+                "    }\n\n" +
+                "    protected void doPost(String uri, String body) {\n" +
+                "        lastResponse = webTestClient.post().uri(uri)\n" +
+                "                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)\n" +
+                "                .bodyValue(body)\n" +
+                "                .exchange();\n" +
+                "    }\n\n" +
+                "    protected void doDelete(String uri) {\n" +
+                "        lastResponse = webTestClient.delete().uri(uri).exchange();\n" +
+                "    }\n\n" +
+                "    protected void doPut(String uri, String body) {\n" +
+                "        lastResponse = webTestClient.put().uri(uri)\n" +
+                "                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)\n" +
+                "                .bodyValue(body)\n" +
+                "                .exchange();\n" +
+                "    }\n" +
+                "}\n";
+    }
+
+    private String generateMockMvcBase(String packageName) {
+        return "package " + packageName + ".support;\n\n" +
+                "import org.springframework.beans.factory.annotation.Autowired;\n" +
+                "import org.springframework.test.web.servlet.MockMvc;\n" +
+                "import org.springframework.test.web.servlet.MvcResult;\n" +
+                "import org.springframework.http.MediaType;\n\n" +
+                "import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;\n\n" +
+                "/**\n" +
+                " * Base class providing MockMvc for step definitions.\n" +
+                " * Generated by CucumberForge.\n" +
+                " */\n" +
+                "public abstract class BaseMockMvcTest {\n\n" +
+                "    @Autowired\n" +
+                "    protected MockMvc mockMvc;\n\n" +
+                "    protected MvcResult lastResult;\n\n" +
+                "    protected void doGet(String uri) throws Exception {\n" +
+                "        lastResult = mockMvc.perform(get(uri)).andReturn();\n" +
+                "    }\n\n" +
+                "    protected void doPost(String uri, String body) throws Exception {\n" +
+                "        lastResult = mockMvc.perform(post(uri)\n" +
+                "                .contentType(MediaType.APPLICATION_JSON)\n" +
+                "                .content(body)).andReturn();\n" +
+                "    }\n\n" +
+                "    protected void doDelete(String uri) throws Exception {\n" +
+                "        lastResult = mockMvc.perform(delete(uri)).andReturn();\n" +
+                "    }\n\n" +
+                "    protected void doPut(String uri, String body) throws Exception {\n" +
+                "        lastResult = mockMvc.perform(put(uri)\n" +
+                "                .contentType(MediaType.APPLICATION_JSON)\n" +
+                "                .content(body)).andReturn();\n" +
+                "    }\n" +
+                "}\n";
+    }
+
+    private String generateWireMockConfig(String packageName) {
+        return "package " + packageName + ".config;\n\n" +
+                "import com.github.tomakehurst.wiremock.WireMockServer;\n" +
+                "import com.github.tomakehurst.wiremock.core.WireMockConfiguration;\n" +
+                "import io.cucumber.java.After;\n" +
+                "import io.cucumber.java.Before;\n" +
+                "import org.springframework.beans.factory.annotation.Value;\n\n" +
+                "/**\n" +
+                " * WireMock configuration for mocking external APIs.\n" +
+                " * Generated by CucumberForge.\n" +
+                " */\n" +
+                "public class WireMockConfiguration {\n\n" +
+                "    private static WireMockServer wireMockServer;\n\n" +
+                "    @Value(\"${wiremock.port:8089}\")\n" +
+                "    private int wiremockPort;\n\n" +
+                "    @Before(\"@wiremock\")\n" +
+                "    public void startWireMock() {\n" +
+                "        if (wireMockServer == null || !wireMockServer.isRunning()) {\n" +
+                "            wireMockServer = new WireMockServer(\n" +
+                "                    WireMockConfiguration.wireMockConfig().port(wiremockPort));\n" +
+                "            wireMockServer.start();\n" +
+                "        }\n" +
+                "    }\n\n" +
+                "    @After(\"@wiremock\")\n" +
+                "    public void stopWireMock() {\n" +
+                "        if (wireMockServer != null && wireMockServer.isRunning()) {\n" +
+                "            wireMockServer.stop();\n" +
+                "        }\n" +
+                "    }\n\n" +
+                "    public static WireMockServer getWireMockServer() {\n" +
+                "        return wireMockServer;\n" +
+                "    }\n" +
+                "}\n";
     }
 
     private String generateTestApplicationYml(ProjectConfig config) {
@@ -128,8 +417,15 @@ public final class BoilerplateService {
         sb.append("\nserver:\n");
         sb.append("  port: 0  # Random port for tests\n");
 
+        if (config.isIncludeWireMock()) {
+            sb.append("\nwiremock:\n");
+            sb.append("  port: 8089\n");
+        }
+
         return sb.toString();
     }
+
+    // =================== Dependency management ===================
 
     private void addDependenciesToBuild(VirtualFile baseDir, ProjectConfig config) throws IOException {
         // Try Gradle first
@@ -207,12 +503,28 @@ public final class BoilerplateService {
             }
         }
 
-        if (config.isIncludeRestAssured()) {
+        if (config.isIncludeRestAssured() || config.getHttpClientType() == ProjectConfig.HttpClientType.REST_ASSURED) {
             sb.append("    testImplementation 'io.rest-assured:rest-assured:5.5.0'\n");
         }
 
         if (config.getDatabaseType() == ProjectConfig.DatabaseType.H2) {
             sb.append("    testRuntimeOnly 'com.h2database:h2:2.3.232'\n");
+        }
+
+        if (config.isIncludeAssertJ()) {
+            sb.append("    testImplementation 'org.assertj:assertj-core:3.26.3'\n");
+        }
+
+        if (config.isIncludeSpringSecurityTest()) {
+            sb.append("    testImplementation 'org.springframework.security:spring-security-test'\n");
+        }
+
+        if (config.isIncludeWireMock()) {
+            sb.append("    testImplementation 'org.wiremock:wiremock-standalone:3.9.2'\n");
+        }
+
+        if (config.isIncludeAwaitility()) {
+            sb.append("    testImplementation 'org.awaitility:awaitility:4.2.2'\n");
         }
 
         return sb.toString();
@@ -243,8 +555,24 @@ public final class BoilerplateService {
             sb.append(mavenDep("org.testcontainers", "junit-jupiter", "1.20.4"));
         }
 
-        if (config.isIncludeRestAssured()) {
+        if (config.isIncludeRestAssured() || config.getHttpClientType() == ProjectConfig.HttpClientType.REST_ASSURED) {
             sb.append(mavenDep("io.rest-assured", "rest-assured", "5.5.0"));
+        }
+
+        if (config.isIncludeAssertJ()) {
+            sb.append(mavenDep("org.assertj", "assertj-core", "3.26.3"));
+        }
+
+        if (config.isIncludeSpringSecurityTest()) {
+            sb.append(mavenDepNoVersion("org.springframework.security", "spring-security-test"));
+        }
+
+        if (config.isIncludeWireMock()) {
+            sb.append(mavenDep("org.wiremock", "wiremock-standalone", "3.9.2"));
+        }
+
+        if (config.isIncludeAwaitility()) {
+            sb.append(mavenDep("org.awaitility", "awaitility", "4.2.2"));
         }
 
         return sb.toString();
@@ -255,6 +583,14 @@ public final class BoilerplateService {
                 "            <groupId>" + groupId + "</groupId>\n" +
                 "            <artifactId>" + artifactId + "</artifactId>\n" +
                 "            <version>" + version + "</version>\n" +
+                "            <scope>test</scope>\n" +
+                "        </dependency>\n";
+    }
+
+    private String mavenDepNoVersion(String groupId, String artifactId) {
+        return "        <dependency>\n" +
+                "            <groupId>" + groupId + "</groupId>\n" +
+                "            <artifactId>" + artifactId + "</artifactId>\n" +
                 "            <scope>test</scope>\n" +
                 "        </dependency>\n";
     }

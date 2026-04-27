@@ -5,7 +5,7 @@
 
     <description><![CDATA[
         BDD Testing Accelerator for Spring Boot with Cucumber.
-        Generate boilerplate, step definitions, AI-powered tests, and more.
+        Generate boilerplate, step definitions, AI-powered tests, Maven run configurations, and more.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
@@ -32,6 +32,8 @@
                 serviceImplementation="com.cucumberforge.plugin.services.ProjectAnalyzerService"/>
         <projectService
                 serviceImplementation="com.cucumberforge.plugin.services.AiService"/>
+        <projectService
+                serviceImplementation="com.cucumberforge.plugin.services.MavenRunConfigService"/>
 
         <!-- Tool Window -->
         <toolWindow id="CucumberForge"
@@ -96,6 +98,13 @@
 
             <separator/>
 
+            <action id="CucumberForge.RunSingleTest"
+                    class="com.cucumberforge.plugin.actions.RunSingleTestAction"
+                    text="Run Cucumber Test..."
+                    description="Run a single scenario, feature file, or tests by tag"/>
+
+            <separator/>
+
             <action id="CucumberForge.OpenDashboard"
                     class="com.cucumberforge.plugin.actions.OpenDashboardAction"
                     text="Open BDD Dashboard"
@@ -122,6 +131,11 @@
                     class="com.cucumberforge.plugin.actions.AiGenerateTestAction"
                     text="AI: Generate Test..."
                     description="Use AI to generate Cucumber tests"/>
+
+            <action id="CucumberForge.ContextRunTest"
+                    class="com.cucumberforge.plugin.actions.RunSingleTestAction"
+                    text="Run Cucumber Test..."
+                    description="Run this feature file, a single scenario, or tests by tag"/>
         </group>
 
         <!-- Context Menu for Java files -->
@@ -139,6 +153,11 @@
                     class="com.cucumberforge.plugin.actions.AiGenerateTestAction"
                     text="AI: Generate Cucumber Tests..."
                     description="Generate Cucumber tests for this class using AI"/>
+
+            <action id="CucumberForge.ContextRunJavaTest"
+                    class="com.cucumberforge.plugin.actions.RunSingleTestAction"
+                    text="Run Test Class..."
+                    description="Run this test class"/>
         </group>
     </actions>
 </idea-plugin>
